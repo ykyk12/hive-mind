@@ -1,4 +1,9 @@
-package com.hivemind.agent;
+package com.hivemind.agent.tools;
+
+import com.hivemind.agent.RiskLevel;
+import com.hivemind.agent.Tool;
+import com.hivemind.agent.ToolContext;
+import com.hivemind.agent.ToolResult;
 
 import java.util.Map;
 
