@@ -145,7 +145,8 @@ public class HiveProperties {
         }
     }
 
-    static List<String> splitCsv(String raw) {
+    /** 逗号分隔配置的统一解析入口：供属性类内部与工具层（如主机白名单）共用。 */
+    public static List<String> splitCsv(String raw) {
         if (raw == null || raw.isBlank()) {
             return List.of();
         }
