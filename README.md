@@ -4,7 +4,7 @@
 
 技术栈：Java 17 · Spring Boot 3.3 · 纯 JDK HttpClient（不引任何 LLM SDK）· Micrometer/Actuator · springdoc-openapi · Docker Compose · GitHub Actions
 
-当前版本 **1.0.0（M0 内核 + M1 集群）**：单 jar 多进程可跑通，无需数据库、无需外部 API（内置本地确定性模型）。
+当前版本 **1.1.0（M0 内核 + M1 集群 + M2 经验面 + M3 测试门禁 + M4 工具面）**：单 jar 多进程可跑通，无需数据库、无需外部 API（内置本地确定性模型）。
 
 ---
 
@@ -46,6 +46,13 @@
 | 三权分立 | `govern/` | 提议者（模型）不能自审、不能自签；审核者不能放行；门锁才有最终放行权 |
 | 门锁（确定性） | `govern/Governor` | 否决/升级人工/方向控制三条线，全程无模型参与，避免被提示注入说服 |
 | 隔离进化 | `evolve/EvolutionPipeline` | `javax.tools` 隔离编译 → 子优先 ClassLoader 加载 → 冒烟 → 原子注册 → 可回滚 |
+| **技能影子对比** | `skill/SkillShadowService` | 同一输入"注入经验 vs 不注入"双跑对比，判定函数可替换；**只更新适应度、不计入验证节点** |
+| **适应度淘汰** | `skill/SkillCurator`、`SkillStore.retire` | 用够了但适应度掉到阈值以下 → 自动退役（停止召回与广播），历史与统计保留、可恢复 |
+| **召回质量评估** | `skill/SkillRecallEvaluation` + `eval/skill-recall-cases.json` | 固定夹具上算 precision@k，改召回算法后可直接对比，指标可回归 |
+| **真实测试门禁（M3）** | `evolve/CandidateTestRunner` | 候选插件自带的单元测试在**隔离类加载器**里用 JUnit Platform Launcher 真实执行，未过不许生效 |
+| **MQTT 直连（M4）** | `agent/tools/MqttPublishTool` | 直接发布到 broker（不再依赖 HTTP 桥）；主题前缀白名单**默认空＝默认拒绝** |
+| **SSH 执行器（M4）** | `agent/tools/SshExecTool` | 主机白名单 + 命令正则白名单（默认空＝禁用）+ HIGH 风险审批 + 超时强杀，不经本地 shell |
+| **网页读写（M4）** | `agent/tools/WebReaderTool`、`WebSubmitTool` | 抓取并提取标题/正文/链接（不执行 JS）；提交为 HIGH 风险写操作；主机白名单 + 体积上限 |
 
 ## 3. 架构
 
@@ -154,7 +161,58 @@ curl -H "Content-Type: application/json" \
 curl -H "$KEY" -X POST "http://localhost:8101/api/v1/evolution/rollback?name=text_stats"
 ```
 
-规则与判据的完整说明见 [`docs/GOVERNANCE.md`](docs/GOVERNANCE.md)。
+规则与判据的完整说明见 [`docs/GOVERNANCE.md`](docs/GOVERNANCE.md)，工具与配置见 [`docs/TOOLS.md`](docs/TOOLS.md)。
+
+## 6.1 经验面（M2）与测试门禁（M3）
+
+```bash
+# 影子对比：同一输入"注入经验 vs 不注入"，看是否真的更好
+curl -H "Content-Type: application/json" \
+     -d '{"input":"订单超时怎么办","skillId":"skill-order-timeout"}' \
+     http://localhost:8101/api/v1/skills/shadow
+
+# 召回质量评估：固定夹具上的 precision@k
+curl "http://localhost:8101/api/v1/skills/eval?topK=4"
+
+# 淘汰巡检：候选与已退役清单（?run=true 立即执行一次）
+curl "http://localhost:8101/api/v1/skills/curation?run=true"
+
+# 测试门禁：候选插件必须自带单元测试，且测试要在隔离类加载器里真实跑通
+# 生成的插件已包含 GeneratedTextStatsToolTest，apply 时你会看到 "候选单元测试全部通过（2/2）"
+curl -H "$KEY" -X POST http://localhost:8101/api/v1/governance/proposals/{id}/apply
+```
+
+测试门禁的失败长这样（**不会**静默放行）：
+
+```json
+{"success":true,"data":{"applied":false,
+ "message":"测试门禁未通过：候选单元测试未通过（成功 0，失败 1）",
+ "steps":["落盘候选源码：...","隔离编译：通过（源文件 2 个）","候选单元测试：候选单元测试未通过（成功 0，失败 1）"]}}
+```
+
+## 6.2 工具面（M4）
+
+所有新增工具**默认关闭**：白名单为空即不可用，需要显式配置才打开。
+
+```bash
+# MQTT 直连（智能家居）
+export HIVE_MQTT_BROKER_URL=tcp://127.0.0.1:1883
+export HIVE_MQTT_TOPIC_ALLOW_PREFIXES=home/living_room/,home/kitchen/
+# 之后可以让 Agent 执行（MEDIUM 风险 → 需要 approve=true）
+#   CALL_TOOL:mqtt_publish {"topic":"home/living_room/light/set","payload":"ON"}
+
+# SSH 执行器（自己的电脑/服务器）
+export HIVE_SSH_HOSTS=10.0.0.5
+export HIVE_SSH_USER=ops
+# 命令白名单以配置形式给出（正则，逐条匹配整条命令），默认空＝一律拒绝
+#   hive.agent.ssh-command-allowlist: ["uptime", "df\\s+-h", "systemctl status \\w+"]
+
+# 网页读取（默认只允许本机；要访问外部站点需显式加白名单）
+export HIVE_WEB_ALLOW_HOSTS=127.0.0.1,localhost,example.com
+#   CALL_TOOL:web_read {"url":"https://example.com"}
+```
+
+MQTT / SSH / 网页提交都是 MEDIUM/HIGH 风险工具，**没有审批令牌不会真正执行**，且每次调用都进审计。
 
 ## 7. 关键设计决策
 
@@ -174,22 +232,37 @@ curl -H "$KEY" -X POST "http://localhost:8101/api/v1/evolution/rollback?name=tex
 | 状态持久化 | 节点/技能/审计均在内存，重启即清空 | 可切 Redis/PostgreSQL 的存储实现（接口已隔离） |
 | 节点发现 | 靠 `peers` 配置 + 心跳补全 | 组播/gossip 自动发现 |
 | 技能回滚 | 只切制品指针，技能库内容仍保留版本 | 按指针驱动召回 |
-| 测试门禁 | 目前是"编译 + 加载 + 冒烟调用" | M3 用 JUnit Platform Launcher 在隔离类加载器里跑候选真实单测 |
+| 测试门禁 | **已实现**：隔离类加载器 + JUnit Launcher 真实跑候选单测（未过不许生效） | 覆盖率门槛、变异测试、按风险分级要求不同强度 |
 | 内核自改 | **不支持自动应用**（故意） | 保持人工评审 + 发布流程 |
 | 节点间认证 | 无 token 时放行（仅本机演示） | 生产必须配 `HIVE_CLUSTER_TOKEN`，并考虑双向 TLS |
-| 通用 HTTP 工具 | 默认只允许本机主机白名单 | 按租户配置出网白名单与配额 |
+| 网页读写 | 抓取+提取（**不执行 JavaScript、无登录态**） | 需要 JS 渲染/登录态的站点接入真实浏览器（Playwright 类），并加域名级配额 |
+| SSH 执行器 | 依赖运行环境的 `openssh` 客户端与密钥 | 可选纯 Java SSH 实现，去掉外部命令依赖 |
+| 影子对比区分度 | 用本地确定性模型时两组输出一致，必然平局 | 接真实模型后才有区分度；判定函数已是可替换策略 |
+| 工具资源限制 | 无 CPU/内存墙（仅类加载隔离 + 静态检查 + 超时） | 独立进程/容器执行候选插件 |
 
 ## 9. 路线图
 
-- **M2 经验面完善**：技能 A/B 影子对比、适应度驱动的版本淘汰、召回质量评估集
-- **M3 测试门禁**：在隔离类加载器中运行候选插件的真实单元测试，淘汰标准量化
-- **M4 工具面**：MQTT 智能家居直连、SSH 执行器（HIGH 风险 + 白名单 + 审批）、浏览器读写工具
-- **后端工业化**：持久化存储、指标看板、限流与配额、灰度发布节点级金丝雀
+**已完成**
+
+- **M0 内核**：多模型路由 + Agent 循环 + 工具与风险门 + 经验蒸馏
+- **M1 集群**：同构节点、心跳租约、term 选举、反熵传播、任务下发
+- **M2 经验面**：技能 A/B 影子对比、适应度驱动淘汰、召回质量评估集与 precision@k
+- **M3 测试门禁**：隔离类加载器 + JUnit Platform Launcher 真实执行候选单测，未过不许生效
+- **M4 工具面**：MQTT 直连、SSH 执行器、网页读写（均为默认关闭 + 白名单 + 审批 + 审计）
+
+**下一步**
+
+- **持久化与配额**：技能/审计/制品落 Redis 或 PostgreSQL，按租户限流
+- **节点级金丝雀**：新制品先在一个节点上跑，指标不退化再扩散（避免"一个坏 patch 全网同时生效"）
+- **更强隔离**：候选插件独立进程/容器执行，配合资源墙与超时；覆盖率门槛与变异测试
+- **真实浏览器**：Playwright 类方案支持 JS 渲染与登录态网页（当前 `web_read` 只做静态提取）
+- **指标看板**：把决策分布、经验适应度、门禁通过率做成可观测面板
 
 ## 10. 版本记录
 
 | 版本 | 说明 |
 |---|---|
+| 1.1.0 | M2 经验面（影子对比 / 适应度淘汰 / 召回评估集）、M3 真实测试门禁（隔离类加载器 + JUnit Launcher，未过不许生效）、M4 工具面（MQTT 直连 / SSH 执行器 / 网页读写，默认关闭 + 白名单 + 审批 + 审计） |
 | 1.0.0 | 首个功能提交（M0 内核 + M1 集群）：多模型路由与断熔、Agent 循环与风险门、技能蒸馏与反熵传播、三权分立门禁与隔离进化、心跳/选举/任务下发、测试与 CI |
 
 ## 11. License

@@ -45,13 +45,16 @@ public final class MockModelProvider implements ModelProvider {
     public CompletionResponse complete(CompletionRequest request) {
         String user = request.lastUserText();
         String observation = lastToolObservation(request.messages());
-        String text = route(user, observation);
+        // 本地模型是"确定性"而不是"无知"：它会如实反映系统提示词里是否注入了经验，
+        // 这样影子对比（注入 vs 不注入）在离线环境下也有可区分的信号。
+        boolean skillsInjected = request.systemPrompt() != null && request.systemPrompt().contains("参考经验");
+        String text = route(user, observation, skillsInjected);
         int completionTokens = Math.max(1, text.length() / 4);
         int promptTokens = Math.max(1, request.messages().stream().mapToInt(m -> m.content() == null ? 0 : m.content().length()).sum() / 4);
         return new CompletionResponse(caps.id(), caps.model(), text, promptTokens, completionTokens, 1L);
     }
 
-    private String route(String user, String observation) {
+    private String route(String user, String observation, boolean skillsInjected) {
         if (user.startsWith(DISTILL_MARKER)) {
             return json(distillSkill(user.substring(DISTILL_MARKER.length()).trim()));
         }
@@ -78,8 +81,9 @@ public final class MockModelProvider implements ModelProvider {
         }
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("action", "answer");
-        payload.put("thought", "无需工具，直接回答");
-        payload.put("answer", "（本地确定性模型）收到任务：" + user);
+        payload.put("thought", skillsInjected ? "参考了注入的经验" : "无需工具，直接回答");
+        payload.put("answer", (skillsInjected ? "（本地确定性模型，已参考经验）" : "（本地确定性模型）")
+                + "收到任务：" + user);
         return json(payload);
     }
 
@@ -93,9 +97,10 @@ public final class MockModelProvider implements ModelProvider {
         return skill;
     }
 
-    /** 插件生成的确定性样例：产出一个可直接编译的 Tool 实现。 */
+    /** 插件生成的确定性样例：产出一个可直接编译的 Tool 实现 + 它自己的单元测试。 */
     private Map<String, Object> generatePlugin(String hint) {
         String className = "GeneratedTextStatsTool";
+        String testClassName = className + "Test";
         String source = """
                 package com.hivemind.plugins.generated;
 
@@ -143,10 +148,51 @@ public final class MockModelProvider implements ModelProvider {
                 }
                 """.formatted(className);
 
+        // 测试门禁要求候选自带单元测试：这里给出一个真实会被执行的测试类
+        String testSource = """
+                package com.hivemind.plugins.generated;
+
+                import com.hivemind.agent.ToolContext;
+                import com.hivemind.agent.ToolResult;
+
+                import java.util.Map;
+
+                import org.junit.jupiter.api.Test;
+
+                import static org.junit.jupiter.api.Assertions.assertEquals;
+                import static org.junit.jupiter.api.Assertions.assertTrue;
+
+                /** 候选插件自带的单元测试：测试门禁会在隔离类加载器里执行它。 */
+                public class %s {
+
+                    @Test
+                    public void 统计字符数与词数() {
+                        %s tool = new %s();
+                        ToolResult result = tool.invoke(
+                                new ToolContext("test-node", "test-tenant", "test-task", true),
+                                Map.of("text", "hive mind"));
+                        assertTrue(result.success());
+                        assertEquals("字符数=9，词数=2（任务 test-task）", result.output());
+                    }
+
+                    @Test
+                    public void 空文本返回零() {
+                        %s tool = new %s();
+                        ToolResult result = tool.invoke(
+                                new ToolContext("test-node", "test-tenant", "test-task", true),
+                                Map.of("text", ""));
+                        assertTrue(result.success());
+                        assertEquals("字符数=0，词数=0（任务 test-task）", result.output());
+                    }
+                }
+                """.formatted(testClassName, className, className, className, className);
+
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("className", className);
         payload.put("packageName", "com.hivemind.plugins.generated");
         payload.put("source", source);
+        payload.put("testClassName", testClassName);
+        payload.put("testSource", testSource);
         payload.put("rationale", "补一个零依赖的文本统计工具，覆盖：" + shorten(hint, 40));
         payload.put("expectedBenefit", "减少一次外部模型往返，同类任务成本下降");
         return payload;

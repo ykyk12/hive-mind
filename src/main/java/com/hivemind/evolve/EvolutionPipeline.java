@@ -40,6 +40,7 @@ public class EvolutionPipeline {
     private final SkillStore skillStore;
     private final WorkspaceManager workspace;
     private final JavaSourceCompiler compiler;
+    private final CandidateTestRunner testRunner;
     private final PluginLoader pluginLoader;
     private final ArtifactStore artifactStore;
     private final ConfigOverlay configOverlay;
@@ -70,17 +71,51 @@ public class EvolutionPipeline {
         String className = proposal.payloadText("className");
         String packageName = proposal.payloadText("packageName");
         String source = proposal.payloadText("source");
+        String testClassName = proposal.payloadText("testClassName");
+        String testSource = proposal.payloadText("testSource");
+
+        if (properties.getEvolve().isRequireTests() && (testClassName.isBlank() || testSource.isBlank())) {
+            audit.record("APPLY_REJECTED", proposal.proposalId(), "evolution-pipeline",
+                    "测试门禁要求候选插件自带单元测试，但未提供 testClassName/testSource");
+            return new ApplyResult(proposal.proposalId(), false, null,
+                    "测试门禁未满足：候选插件必须自带单元测试（testClassName + testSource）",
+                    append(steps, List.of("拒绝：缺少候选单元测试")), elapsed(start));
+        }
+
         steps.add("落盘候选源码：" + packageName + "." + className);
         Path sourceFile = workspace.writeSource(proposal.proposalId(), packageName, className, source);
 
+        List<Path> sourcesToCompile = new ArrayList<>();
+        sourcesToCompile.add(sourceFile);
+        if (!testSource.isBlank()) {
+            Path testFile = workspace.writeSource(proposal.proposalId(), packageName, testClassName, testSource);
+            sourcesToCompile.add(testFile);
+            steps.add("落盘候选测试：" + packageName + "." + testClassName);
+        }
+
         Path classesDir = workspace.classesDir(proposal.proposalId());
-        JavaSourceCompiler.CompileResult compiled = compiler.compile(sourceFile, classesDir);
-        steps.add("隔离编译：" + (compiled.success() ? "通过" : "失败"));
+        JavaSourceCompiler.CompileResult compiled = compiler.compileAll(sourcesToCompile, classesDir);
+        steps.add("隔离编译：" + (compiled.success() ? "通过" : "失败") + "（源文件 " + sourcesToCompile.size() + " 个）");
         if (!compiled.success()) {
             audit.record("APPLY_REJECTED", proposal.proposalId(), "evolution-pipeline",
                     "编译失败：" + compiled.diagnostics());
             return new ApplyResult(proposal.proposalId(), false, null,
                     "编译未通过，候选代码已丢弃", append(steps, compiled.diagnostics()), elapsed(start));
+        }
+
+        if (!testClassName.isBlank()) {
+            CandidateTestRunner.TestReport report = testRunner.run(classesDir, packageName + "." + testClassName);
+            steps.add("候选单元测试：" + report.message());
+            if (!report.success()) {
+                List<String> details = new ArrayList<>(report.failures());
+                if (details.isEmpty()) {
+                    details.add(report.message());
+                }
+                audit.record("APPLY_REJECTED", proposal.proposalId(), "evolution-pipeline",
+                        "测试门禁未通过：" + report.message() + " " + report.failures());
+                return new ApplyResult(proposal.proposalId(), false, null,
+                        "测试门禁未通过：" + report.message(), append(steps, details), elapsed(start));
+            }
         }
 
         PluginLoader.LoadResult loaded = pluginLoader.load(classesDir, packageName + "." + className);
@@ -100,9 +135,9 @@ public class EvolutionPipeline {
         workspace.discardStaging(proposal.proposalId());
         steps.add("原子注册生效：工具 " + tool.name() + "，制品 " + record.artifactId());
         audit.record("APPLIED", proposal.proposalId(), "evolution-pipeline",
-                "插件生效：" + tool.name() + "（制品 " + record.artifactId() + "）");
+                "插件生效：" + tool.name() + "（制品 " + record.artifactId() + "，测试门禁已通过）");
         return new ApplyResult(proposal.proposalId(), true, record.artifactId(),
-                "插件 " + tool.name() + " 已生效（可回滚）", steps, elapsed(start));
+                "插件 " + tool.name() + " 已生效（测试通过 + 可回滚）", steps, elapsed(start));
     }
 
     private ApplyResult applySkill(ChangeProposal proposal, List<String> steps, long start) {

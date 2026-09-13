@@ -32,6 +32,8 @@ public class SkillStore implements SkillAdvisor {
     private final Map<String, List<SkillArtifact>> versions = new ConcurrentHashMap<>();
     private final Map<String, Integer> activeVersions = new ConcurrentHashMap<>();
     private final Map<String, SkillStats> statsBySkill = new ConcurrentHashMap<>();
+    /** 退役技能：不再被召回、不再参与推广、不再广播（但历史与统计保留，便于事后复盘）。 */
+    private final Set<String> retiredSkills = ConcurrentHashMap.newKeySet();
     private final HiveProperties properties;
 
     public SkillStore(HiveProperties properties) {
@@ -117,13 +119,55 @@ public class SkillStore implements SkillAdvisor {
         return stored;
     }
 
-    /** 是否允许推广到全网：跨节点验证 + 适应度 + 使用次数三重门槛。 */
+    /** 是否允许推广到全网：跨节点验证 + 适应度 + 使用次数三重门槛，且未被退役。 */
     public boolean promotable(String skillId) {
+        if (isRetired(skillId)) {
+            return false;
+        }
         HiveProperties.Skill config = properties.getSkill();
         SkillStats stats = stats(skillId);
         return stats.validators().size() >= config.getPromotionMinNodes()
                 && stats.fitness() >= config.getPromotionMinFitness()
                 && stats.uses() >= config.getPromotionMinUses();
+    }
+
+    /** 退役：停止召回与广播。（"学到坏经验"必须能退回去，否则适应度只是装饰） */
+    public void retire(String skillId, String reason) {
+        if (retiredSkills.add(skillId)) {
+            log.warn("技能退役：{}（原因：{}，使用 {} 次，适应度 {}）", skillId, reason,
+                    stats(skillId).uses(), String.format("%.2f", stats(skillId).fitness()));
+        }
+    }
+
+    public void unretire(String skillId) {
+        if (retiredSkills.remove(skillId)) {
+            log.info("技能恢复：{}", skillId);
+        }
+    }
+
+    public boolean isRetired(String skillId) {
+        return retiredSkills.contains(skillId);
+    }
+
+    public Set<String> retiredSkillIds() {
+        return Set.copyOf(retiredSkills);
+    }
+
+    /** 自动淘汰候选：用够了、但适应度掉到阈值以下。 */
+    public List<String> retireCandidates() {
+        HiveProperties.Skill config = properties.getSkill();
+        List<String> candidates = new ArrayList<>();
+        for (String skillId : versions.keySet()) {
+            if (isRetired(skillId)) {
+                continue;
+            }
+            SkillStats stats = stats(skillId);
+            if (stats.uses() >= config.getRetireMinUses() && stats.fitness() < config.getRetireFitnessThreshold()) {
+                candidates.add(skillId);
+            }
+        }
+        candidates.sort(Comparator.naturalOrder());
+        return candidates;
     }
 
     public List<SkillArtifact> promotableArtifacts() {
@@ -147,6 +191,9 @@ public class SkillStore implements SkillAdvisor {
         }
         Map<String, Double> scored = new LinkedHashMap<>();
         for (SkillArtifact artifact : allActive()) {
+            if (isRetired(artifact.skillId())) {
+                continue;
+            }
             double relevance = relevance(taskInput, artifact.trigger() + " " + artifact.title());
             if (relevance <= 0.0) {
                 continue;
@@ -178,6 +225,7 @@ public class SkillStore implements SkillAdvisor {
         versions.clear();
         activeVersions.clear();
         statsBySkill.clear();
+        retiredSkills.clear();
     }
 
     /**

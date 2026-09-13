@@ -83,6 +83,8 @@ public class Reviewer {
         String className = proposal.payloadText("className");
         String packageName = proposal.payloadText("packageName");
         String source = proposal.payloadText("source");
+        String testClassName = proposal.payloadText("testClassName");
+        String testSource = proposal.payloadText("testSource");
         if (className.isBlank() || source.isBlank()) {
             blockers.add("插件必须提供 className 与 source");
             return 15;
@@ -101,20 +103,26 @@ public class Reviewer {
         if (!source.contains("public class " + className)) {
             blockers.add("源码中找不到 public class " + className);
         }
-        for (String line : source.split("\n")) {
-            String trimmed = line.trim();
-            if (!trimmed.startsWith("import ")) {
-                continue;
-            }
-            String imported = trimmed.substring("import ".length()).replace(";", "").trim();
-            if (imported.startsWith("static ")) {
-                imported = imported.substring("static ".length()).trim();
-            }
-            boolean allowed = ALLOWED_IMPORT_PREFIXES.stream().anyMatch(imported::startsWith);
-            if (!allowed) {
-                blockers.add("禁止依赖外部包（隔离编译只提供 java.* 与 com.hivemind.agent.*）：" + imported);
+        checkImports(source, blockers);
+
+        // 测试门禁：候选必须自带单元测试（否则运行时会被流水线拒绝，这里提前拦住，省一次编译）
+        if (properties.getEvolve().isRequireTests()) {
+            if (testClassName.isBlank() || testSource.isBlank()) {
+                blockers.add("测试门禁要求提供 testClassName 与 testSource（候选插件必须自带单元测试）");
             }
         }
+        if (!testSource.isBlank()) {
+            int testLines = testSource.split("\n", -1).length;
+            if (testLines > limit) {
+                blockers.add("测试源码 " + testLines + " 行超过上限 " + limit + " 行");
+            }
+            if (testClassName.isBlank() || !testSource.contains("public class " + testClassName)) {
+                blockers.add("测试源码中找不到 public class " + testClassName);
+            }
+            checkImports(testSource, blockers);
+            checkForbiddenPatterns(testSource, blockers);
+        }
+
         Set<String> riskyWords = new LinkedHashSet<>();
         for (String word : List.of("HttpClient", "Socket", "Thread", "ExecutorService")) {
             if (source.contains(word)) {
@@ -126,6 +134,26 @@ public class Reviewer {
             return 25;
         }
         return lines > limit * 0.6 ? 20 : 15;
+    }
+
+    /** import 白名单：隔离编译只提供 java.* 与 com.hivemind.agent.*（候选测试额外允许 JUnit）。 */
+    private void checkImports(String source, List<String> blockers) {
+        for (String line : source.split("\n")) {
+            String trimmed = line.trim();
+            if (!trimmed.startsWith("import ")) {
+                continue;
+            }
+            String imported = trimmed.substring("import ".length()).replace(";", "").trim();
+            if (imported.startsWith("static ")) {
+                imported = imported.substring("static ".length()).trim();
+            }
+            boolean allowed = ALLOWED_IMPORT_PREFIXES.stream().anyMatch(imported::startsWith)
+                    || imported.startsWith("org.junit.jupiter.")
+                    || imported.startsWith("org.junit.platform.");
+            if (!allowed) {
+                blockers.add("禁止依赖外部包（隔离编译只提供 java.*、com.hivemind.agent.* 与 JUnit）：" + imported);
+            }
+        }
     }
 
     private int checkSkill(ChangeProposal proposal, List<String> blockers, List<String> warnings) {

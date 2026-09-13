@@ -43,6 +43,7 @@
 | 契约 | 必须 `implements Tool`，且源码中存在 `public class <className>` |
 | 包名 | 必须以 `com.hivemind.plugins` 开头 |
 | 体量 | 行数 ≤ `max-plugin-source-lines`（默认 400） |
+| 测试源码 | 必须提供 `testClassName` + `testSource`（测试门禁）；测试代码同样过禁止模式与 import 白名单——测试不能成为绕过审查的后门 |
 | 配置键 | 必须在 `ConfigWhitelist`（`agent.max-steps`、`agent.max-injected-skills`、`skill.promotion-min-nodes`、`governance.max-risk-score`） |
 
 风险分从 10 起算：插件 +15、内核 +45、源码超六成额度 +10、含并发/网络能力 +10、自报高风险 +10，上限 100。
@@ -52,13 +53,15 @@
 ## 4. 应用阶段（真正改系统的动作）
 
 ```
-落盘 staging → javax.tools 隔离编译 → 子优先 ClassLoader 加载 → 冒烟调用
-      → 制品归档 hive/artifacts/{name}/v{n} → 注册表指针切换 → 审计留痕
+落盘 staging → javax.tools 隔离编译（插件 + 其自带测试）→ 隔离类加载器里跑候选单元测试
+      → 冒烟调用 → 制品归档 hive/artifacts/{name}/v{n} → 注册表指针切换 → 审计留痕
 ```
 
+- **测试门禁（M3）**：候选插件必须自带单元测试且全部通过，否则拒绝生效（`require-tests` 默认 true）。
+  测试在隔离类加载器里真实执行、带超时；JUnit 不可用、测试超时、一个测试都没发现，一律按失败处理。
 - 任一环节失败：候选代码就地丢弃，运行中的实例不受影响，原因写入审计。
 - `KERNEL` 类型即使签名通过也**不会**被自动应用：返回 `applied=false` 并提示走人工评审与发布流程。
-- 冒烟是"能加载 + 能实例化 + 能按参数契约被调用并返回非空结果"，**不等于**完整单元测试（见 README 路线图 M3）。
+- 冒烟是"能加载 + 能实例化 + 能按参数契约被调用并返回非空结果"，位于测试门禁之后，作为最后一道执行性检查。
 
 ## 5. 回滚
 
@@ -115,4 +118,5 @@ curl -s -H "$KEY" -X POST "$BASE/api/v1/evolution/rollback?name=text_stats"
 - 策略配置本身没有走同一套门禁（改 `application.yml` 需要重启，属于人工运维动作）；
 - 审计轨迹在内存，重启丢失；
 - 没有做"多节点同时自改"的并发互斥（当前假设治理 API 只在单个大脑节点被调用）；
-- 没有对插件做资源限制（CPU/内存/超时墙），隔离仅限于类加载与静态检查。
+- 插件隔离仍是**类加载 + 静态检查 + 测试门禁 + 超时**，没有 CPU/内存墙与独立进程——真正硬隔离需要独立进程或容器；
+- 门禁只覆盖"插件/技能/白名单配置"三类，内核源码必须人工走评审与发布。

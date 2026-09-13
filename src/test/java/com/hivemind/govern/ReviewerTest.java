@@ -110,12 +110,73 @@ class ReviewerTest {
     }
 
     private ChangeProposal pluginProposal(String proposer, String source) {
+        String className = classNameOf(source);
         Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("className", classNameOf(source));
+        payload.put("className", className);
         payload.put("packageName", "com.hivemind.plugins.generated");
         payload.put("source", source);
+        payload.put("testClassName", className + "Test");
+        payload.put("testSource", testSourceFor(className));
         return new ChangeProposal("p-1", ChangeKind.PLUGIN, "新增插件", "补能力", "减少一次模型往返", 20,
                 proposer, payload, ProposalStatus.PROPOSED, System.currentTimeMillis());
+    }
+
+    /** 测试门禁要求候选自带单元测试，因此合规提案必须包含测试源码。 */
+    private String testSourceFor(String className) {
+        return """
+                package com.hivemind.plugins.generated;
+
+                import com.hivemind.agent.ToolContext;
+                import com.hivemind.agent.ToolResult;
+
+                import java.util.Map;
+
+                import org.junit.jupiter.api.Test;
+
+                import static org.junit.jupiter.api.Assertions.assertTrue;
+
+                public class %sTest {
+                    @Test
+                    public void 可被调用() {
+                        %s tool = new %s();
+                        ToolResult result = tool.invoke(new ToolContext("n", "t", "task", true), Map.of("text", "x"));
+                        assertTrue(result.success());
+                    }
+                }
+                """.formatted(className, className, className);
+    }
+
+    @Test
+    void 缺少候选单元测试即被拦下() {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("className", "NoTestTool");
+        payload.put("packageName", "com.hivemind.plugins.generated");
+        payload.put("source", validPluginSource("NoTestTool", "return ToolResult.ok(\"ok\");"));
+        ChangeProposal proposal = new ChangeProposal("p-2", ChangeKind.PLUGIN, "无测试插件", "缺测试",
+                "提升稳定性", 20, "someone", payload, ProposalStatus.PROPOSED, System.currentTimeMillis());
+
+        ReviewVerdict verdict = new Reviewer(properties).review(proposal, Reviewer.AGENT_ID);
+
+        assertFalse(verdict.approved(), "测试门禁要求候选自带单元测试");
+        assertTrue(verdict.blockers().stream().anyMatch(b -> b.contains("测试门禁")), verdict.blockers().toString());
+    }
+
+    @Test
+    void 测试源码里的禁止模式同样被拦下() {
+        String className = "EvilTestTool";
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("className", className);
+        payload.put("packageName", "com.hivemind.plugins.generated");
+        payload.put("source", validPluginSource(className, "return ToolResult.ok(\"ok\");"));
+        payload.put("testClassName", className + "Test");
+        payload.put("testSource", testSourceFor(className).replace("assertTrue(result.success());", "System.exit(1);"));
+        ChangeProposal proposal = new ChangeProposal("p-3", ChangeKind.PLUGIN, "测试里搞破坏", "偷偷退出进程",
+                "提升稳定性", 20, "someone", payload, ProposalStatus.PROPOSED, System.currentTimeMillis());
+
+        ReviewVerdict verdict = new Reviewer(properties).review(proposal, Reviewer.AGENT_ID);
+
+        assertFalse(verdict.approved(), "测试代码也要过同一套黑名单，不能成为绕过审查的后门");
+        assertTrue(verdict.blockers().stream().anyMatch(b -> b.contains("禁止模式")), verdict.blockers().toString());
     }
 
     private String classNameOf(String source) {

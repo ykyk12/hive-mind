@@ -13,7 +13,7 @@
 
     <groupId>com.hivemind</groupId>
     <artifactId>hive-mind</artifactId>
-    <version>1.0.0</version>
+    <version>1.1.0</version>
     <name>hive-mind</name>
     <description>HiveMind —— 同构蜂巢智能体平台：多模型路由 + 经验蒸馏传播 + 三权分立自改门禁</description>
 
@@ -41,10 +41,34 @@
             <version>${springdoc.version}</version>
         </dependency>
 
+        <!-- M4 工具面：MQTT 直连发布（智能家居/物联网桥）。除它之外不引任何第三方运行时依赖。 -->
+        <dependency>
+            <groupId>org.eclipse.paho</groupId>
+            <artifactId>org.eclipse.paho.client.mqttv3</artifactId>
+            <version>1.2.5</version>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
             <optional>true</optional>
+        </dependency>
+
+        <!--
+          M3 测试门禁是**运行时能力**（候选插件必须在隔离类加载器里跑真实单测才允许生效），
+          所以 JUnit 的 API/引擎/启动器随应用分发，而不是只在 test scope：版本由 spring-boot-dependencies 统一管理。
+        -->
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter-engine</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
         </dependency>
 
         <dependency>

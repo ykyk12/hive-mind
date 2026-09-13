@@ -1,0 +1,51 @@
+{
+  "skills": [
+    {
+      "skillId": "skill-order-timeout",
+      "title": "订单超时处理",
+      "trigger": "订单超时、物流长时间未更新",
+      "procedure": "1) 查物流最新状态；2) 判断是否已发货；3) 已发货则给出预计送达并说明；未发货则引导申请退款。",
+      "tags": ["demo", "order"]
+    },
+    {
+      "skillId": "skill-refund-policy",
+      "title": "退款规则说明",
+      "trigger": "退款、退货、钱什么时候到账",
+      "procedure": "1) 区分未发货退款与已发货退货；2) 说明各自时效；3) 给出操作入口，不承诺系统外的时效。",
+      "tags": ["demo", "refund"]
+    },
+    {
+      "skillId": "skill-risk-review",
+      "title": "风控复核处理",
+      "trigger": "风控拦截、下单被拒、账户风险",
+      "procedure": "1) 说明命中规则；2) 给出申诉路径；3) 不得引导绕过风控。",
+      "tags": ["demo", "risk"]
+    },
+    {
+      "skillId": "skill-text-stats",
+      "title": "文本统计",
+      "trigger": "统计字数、词数、文本长度",
+      "procedure": "1) 调用 text_stats 工具；2) 直接返回统计结果，不要自行估算。",
+      "tags": ["demo", "tool"]
+    },
+    {
+      "skillId": "skill-smart-home-safe",
+      "title": "设备控制的审批前置",
+      "trigger": "开灯、关灯、空调、设备控制",
+      "procedure": "1) 确认设备标识；2) 中高风险操作先取审批令牌；3) 被拒时说明原因，不绕路。",
+      "tags": ["demo", "device"]
+    }
+  ],
+  "cases": [
+    { "query": "订单超时怎么办", "expectAnyOf": ["skill-order-timeout"] },
+    { "query": "我的物流一直不更新", "expectAnyOf": ["skill-order-timeout"] },
+    { "query": "退款什么时候到账", "expectAnyOf": ["skill-refund-policy"] },
+    { "query": "退货流程是什么", "expectAnyOf": ["skill-refund-policy"] },
+    { "query": "下单被风控拦截了", "expectAnyOf": ["skill-risk-review"] },
+    { "query": "账户提示有风险怎么申诉", "expectAnyOf": ["skill-risk-review"] },
+    { "query": "帮我统计这段文字的字数", "expectAnyOf": ["skill-text-stats"] },
+    { "query": "这段文本有多少词", "expectAnyOf": ["skill-text-stats"] },
+    { "query": "帮我开客厅的灯", "expectAnyOf": ["skill-smart-home-safe"] },
+    { "query": "把空调调到 26 度", "expectAnyOf": ["skill-smart-home-safe"] }
+  ]
+}

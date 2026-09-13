@@ -61,6 +61,32 @@ public class HiveProperties {
         /** 通用 HTTP 工具的主机白名单，默认只允许本机——默认放通全网的"通用请求工具"等于开后门。 */
         private String httpAllowHosts = "127.0.0.1,localhost";
         private long httpTimeoutMillis = 5000;
+
+        // ---- M4 工具面：MQTT 直连 ----
+        /** MQTT broker 地址（如 tcp://127.0.0.1:1883）；留空则 mqtt_publish 不可用。 */
+        private String mqttBrokerUrl = "";
+        private String mqttClientId = "hive-mind";
+        private String mqttUsername = "";
+        private String mqttPassword = "";
+        /** 允许发布的主题前缀白名单；默认空＝一个主题都不许发（默认拒绝，而不是默认放通）。 */
+        private String mqttTopicAllowPrefixes = "";
+        private int mqttQos = 1;
+        private long mqttTimeoutMillis = 5000;
+
+        // ---- M4 工具面：SSH 执行器 ----
+        /** 允许 SSH 的目标主机白名单；默认空＝禁用该工具。 */
+        private String sshHosts = "";
+        private String sshUser = "";
+        private int sshPort = 22;
+        private String sshIdentityFile = "";
+        /** 允许执行的命令正则（逐条对整条命令匹配）；默认空＝一律拒绝。 */
+        private List<String> sshCommandAllowlist = new ArrayList<>();
+        private long sshTimeoutMillis = 10000;
+
+        // ---- M4 工具面：网页读写 ----
+        /** 网页工具允许访问的主机白名单，默认只允许本机。 */
+        private String webAllowHosts = "127.0.0.1,localhost";
+        private int webMaxBytes = 200000;
     }
 
     /** 经验/技能参数。 */
@@ -72,6 +98,14 @@ public class HiveProperties {
         private int promotionMinNodes = 2;
         private double promotionMinFitness = 0.6;
         private int promotionMinUses = 3;
+        /** 淘汰：使用次数达到该值且适应度低于阈值，自动退役（不再召回、不再广播）。 */
+        private int retireMinUses = 5;
+        private double retireFitnessThreshold = 0.35;
+        /** 自动淘汰巡检周期（秒），0 表示关闭自动淘汰。 */
+        private long curationIntervalSeconds = 300;
+        /** 召回评估：precision@k 的最低要求（用于评估接口与测试断言）。 */
+        private double recallEvalMinPrecision = 0.9;
+        private int recallEvalTopK = 4;
     }
 
     /** 自改（制品进化）参数。 */
@@ -81,7 +115,12 @@ public class HiveProperties {
         /** 允许自动门禁放行的变更类型。 */
         private String autoApplyKinds = "SKILL,CONFIG,PLUGIN";
         private int maxPluginSourceLines = 400;
+        /** 冒烟校验：能加载并实例化，不通过不允许切换。 */
         private boolean requireSmokeCheck = true;
+        /** 测试门禁：候选插件必须自带单元测试且全部通过，未过不许生效。 */
+        private boolean requireTests = true;
+        /** 测试门禁允许的最大用时长（秒），超时即判失败。 */
+        private int testTimeoutSeconds = 60;
 
         public Set<String> autoApplyKindSet() {
             return new LinkedHashSet<>(splitCsv(autoApplyKinds));

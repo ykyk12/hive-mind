@@ -45,7 +45,9 @@ public class AgentLoop {
         String nodeId = properties.getNode().getId();
         int maxSteps = task.maxSteps() > 0 ? task.maxSteps() : properties.getAgent().getMaxSteps();
 
-        List<SkillAdvisor.SkillHint> hints = skillAdvisor.hintsFor(task.input(), properties.getAgent().getMaxInjectedSkills());
+        List<SkillAdvisor.SkillHint> hints = task.useSkills()
+                ? skillAdvisor.hintsFor(task.input(), properties.getAgent().getMaxInjectedSkills())
+                : List.of();
         List<String> skillsUsed = hints.stream().map(h -> h.skillId() + "@" + h.version()).toList();
 
         CompletionRequest request = CompletionRequest.of(task.taskType(), systemPrompt(hints),
@@ -108,11 +110,14 @@ public class AgentLoop {
                 modelId, latency, success, error);
 
         // 把轨迹交给记忆层：这是"神经元吸收经验"的唯一入口，失败轨迹也上报（负样本同样有价值）。
-        try {
-            experienceRecorder.record(new TaskTrace(task.taskId(), task.tenantId(), nodeId, task.input(),
-                    answer, List.copyOf(toolsUsed), skillsUsed, success, steps.size(), latency));
-        } catch (RuntimeException e) {
-            log.warn("经验上报失败（不影响任务结果）：{}", e.getMessage());
+        // 影子/评测流量除外（task.reportExperience=false）：评测自身不能污染适应度统计。
+        if (task.reportExperience()) {
+            try {
+                experienceRecorder.record(new TaskTrace(task.taskId(), task.tenantId(), nodeId, task.input(),
+                        answer, List.copyOf(toolsUsed), skillsUsed, success, steps.size(), latency));
+            } catch (RuntimeException e) {
+                log.warn("经验上报失败（不影响任务结果）：{}", e.getMessage());
+            }
         }
         return result;
     }

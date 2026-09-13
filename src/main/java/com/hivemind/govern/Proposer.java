@@ -63,6 +63,12 @@ public class Proposer {
         payload.put("className", className);
         payload.put("packageName", packageName.isBlank() ? "com.hivemind.plugins.generated" : packageName);
         payload.put("source", source);
+        String testClassName = String.valueOf(parsed.getOrDefault("testClassName", "")).trim();
+        String testSource = String.valueOf(parsed.getOrDefault("testSource", "")).trim();
+        if (!testClassName.isBlank() && !testSource.isBlank()) {
+            payload.put("testClassName", testClassName);
+            payload.put("testSource", testSource);
+        }
 
         ChangeProposal proposal = new ChangeProposal(Ids.shortId(), ChangeKind.PLUGIN,
                 "新增工具插件：" + className,

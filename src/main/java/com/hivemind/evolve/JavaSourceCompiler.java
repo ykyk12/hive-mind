@@ -38,6 +38,11 @@ public class JavaSourceCompiler {
     }
 
     public CompileResult compile(Path sourceFile, Path classesDir) {
+        return compileAll(List.of(sourceFile), classesDir);
+    }
+
+    /** 一次编译多个源文件：插件类与它的测试类必须一起编译，否则测试看不到被测类。 */
+    public CompileResult compileAll(List<Path> sourceFiles, Path classesDir) {
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         if (compiler == null) {
             return new CompileResult(false,
@@ -45,8 +50,11 @@ public class JavaSourceCompiler {
         }
         DiagnosticCollector<JavaFileObject> diagnostics = new DiagnosticCollector<>();
         try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(diagnostics, null, StandardCharsets.UTF_8)) {
-            Iterable<? extends JavaFileObject> units =
-                    fileManager.getJavaFileObjectsFromFiles(List.of(sourceFile.toFile()));
+            List<File> files = new ArrayList<>();
+            for (Path sourceFile : sourceFiles) {
+                files.add(sourceFile.toFile());
+            }
+            Iterable<? extends JavaFileObject> units = fileManager.getJavaFileObjectsFromFiles(files);
             List<String> options = new ArrayList<>(List.of("-d", classesDir.toString(), "-proc:none"));
             String classpath = classpath();
             if (!classpath.isBlank()) {
@@ -58,7 +66,7 @@ public class JavaSourceCompiler {
             for (Diagnostic<? extends JavaFileObject> diagnostic : diagnostics.getDiagnostics()) {
                 messages.add(diagnostic.getKind() + " 行 " + diagnostic.getLineNumber() + "：" + diagnostic.getMessage(null));
             }
-            log.info("隔离编译结果 success={} 诊断={} 条", success, messages.size());
+            log.info("隔离编译结果 success={} 文件={} 诊断={} 条", success, sourceFiles.size(), messages.size());
             return new CompileResult(success, List.copyOf(messages), classesDir);
         } catch (IOException e) {
             return new CompileResult(false, List.of("编译过程 IO 异常：" + e.getMessage()), classesDir);
@@ -86,16 +94,29 @@ public class JavaSourceCompiler {
 
     private List<String> codeSourceLocations() {
         List<String> locations = new ArrayList<>();
-        for (Class<?> type : List.of(Tool.class, JavaSourceCompiler.class)) {
+        locations.addAll(codeSourceOf(Tool.class));
+        locations.addAll(codeSourceOf(JavaSourceCompiler.class));
+        // 候选测试要 import JUnit 注解：把 JUnit 所在位置也加入编译类路径（按需探测，缺失不影响主流程）
+        for (String hint : List.of("org.junit.jupiter.api.Test",
+                "org.junit.platform.launcher.core.LauncherFactory")) {
             try {
-                java.security.CodeSource source = type.getProtectionDomain().getCodeSource();
-                if (source != null && source.getLocation() != null) {
-                    locations.add(Path.of(source.getLocation().toURI()).toString());
-                }
-            } catch (Exception e) {
-                log.debug("获取 {} 的 CodeSource 失败：{}", type.getSimpleName(), e.getMessage());
+                locations.addAll(codeSourceOf(Class.forName(hint, false, JavaSourceCompiler.class.getClassLoader())));
+            } catch (Throwable ignored) {
+                log.debug("编译类路径提示类不可用（跳过）：{}", hint);
             }
         }
         return locations;
+    }
+
+    private List<String> codeSourceOf(Class<?> type) {
+        try {
+            java.security.CodeSource source = type.getProtectionDomain().getCodeSource();
+            if (source != null && source.getLocation() != null) {
+                return List.of(Path.of(source.getLocation().toURI()).toString());
+            }
+        } catch (Exception e) {
+            log.debug("获取 {} 的 CodeSource 失败：{}", type.getSimpleName(), e.getMessage());
+        }
+        return List.of();
     }
 }

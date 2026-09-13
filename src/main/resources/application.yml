@@ -37,12 +37,43 @@ hive:
     lease-millis: ${HIVE_LEASE_MS:4000}
 
   agent:
-    # 单次任务最多几轮 模型→工具→模型
+    # 单次任务最多几轮 模型→工具→观察→模型
     max-steps: 6
     # 单次任务最多注入几条技能
     max-injected-skills: 4
-    # 任务入口默认是否要求审批令牌（高危工具另算，见 tools 风险等级）
+    # 任务入口默认的模型任务类型
     default-model-task-type: REASONING
+    # ---- M4 工具面：全部默认关闭，白名单为空即不可用 ----
+    mqtt-broker-url: ${HIVE_MQTT_BROKER_URL:}
+    mqtt-client-id: hive-mind
+    mqtt-username: ${HIVE_MQTT_USERNAME:}
+    mqtt-password: ${HIVE_MQTT_PASSWORD:}
+    # 允许发布的主题前缀；空＝默认拒绝（不要默认放通整个 broker）
+    mqtt-topic-allow-prefixes: ${HIVE_MQTT_TOPIC_ALLOW_PREFIXES:}
+    mqtt-qos: 1
+    mqtt-timeout-millis: 5000
+    # SSH 执行器：主机与命令双白名单，缺一不可
+    ssh-hosts: ${HIVE_SSH_HOSTS:}
+    ssh-user: ${HIVE_SSH_USER:}
+    ssh-port: 22
+    ssh-identity-file: ${HIVE_SSH_IDENTITY:}
+    ssh-command-allowlist: []
+    ssh-timeout-millis: 10000
+    # 网页读写：默认只允许本机
+    web-allow-hosts: ${HIVE_WEB_ALLOW_HOSTS:127.0.0.1,localhost}
+    web-max-bytes: 200000
+
+  # 经验面（M2）：蒸馏、推广门槛、淘汰、召回评估
+  skill:
+    distill-enabled: ${HIVE_SKILL_DISTILL:true}
+    promotion-min-nodes: 2
+    promotion-min-fitness: 0.6
+    promotion-min-uses: 3
+    retire-min-uses: 5
+    retire-fitness-threshold: 0.35
+    curation-interval-seconds: 300
+    recall-eval-min-precision: 0.9
+    recall-eval-top-k: 4
 
   evolve:
     # 制品根目录（工作区/制品库/审计轨迹都落这里）
@@ -54,6 +85,9 @@ hive:
     max-plugin-source-lines: 400
     # 冒烟校验时必须能加载并实例化；不通过不允许切换
     require-smoke-check: true
+    # M3 测试门禁：候选插件必须自带单元测试且全部通过，未过不许生效
+    require-tests: ${HIVE_REQUIRE_TESTS:true}
+    test-timeout-seconds: 60
 
   governance:
     # 自审禁令：提议者不得是审核者，审核者不得是最终放行人
