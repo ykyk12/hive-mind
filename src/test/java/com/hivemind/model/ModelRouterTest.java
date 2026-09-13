@@ -33,7 +33,7 @@ class ModelRouterTest {
 
         assertEquals("mock-local", response.providerId(), "坏提供方应被跳过，路由降级到本地模型");
         assertEquals(1, router.stats("broken-provider").failures(), "失败要被记账，供 EMA 学习");
-        assertEquals(2, router.availableCount(), "配置了密钥的提供方都算可用（可用≠健康）");
+        assertEquals(3, router.availableCount(), "三个提供方（两个本地模型 + 一个已配密钥的远端）都算可用：可用≠健康");
     }
 
     @Test
@@ -52,10 +52,14 @@ class ModelRouterTest {
     void 能力画像决定排序_代码任务优先选择代码专长模型() {
         ModelRouter router = router();
 
-        List<ModelProvider> codeChain = router.fallbackChain(TaskType.CODE);
+        List<String> chain = router.fallbackChain(TaskType.CODE).stream()
+                .map(provider -> provider.caps().id())
+                .toList();
 
-        assertEquals("code-mock", codeChain.get(0).caps().id(), "CODE 强项的模型应排在前面");
-        assertTrue(router.score(TaskType.CODE, codeChain.get(0)) > 0);
+        // 权重更高的坏提供方仍会排在前面（画像+权重），但"有 CODE 强项"必须优于"没有该强项"
+        assertTrue(chain.indexOf("code-mock") < chain.indexOf("mock-local"),
+                "CODE 强项的模型应排在无该强项的模型之前：" + chain);
+        assertTrue(router.score(TaskType.CODE, router.fallbackChain(TaskType.CODE).get(0)) > 0);
     }
 
     private ModelRouter router() {

@@ -80,24 +80,25 @@ class GovernanceFlowIntegrationTest {
 
         assertTrue(result.success(), result.output());
         assertTrue(result.output().contains("字符数"), result.output());
-        assertTrue(tool.source().startsWith("plugin@"), "来源要能区分内置与进化产物：" + tool.source());
+        // 注意：来源标记在注册表条目上，而不是工具实例上——Tool.source() 是接口默认方法，插件不会覆写它
+        String registrationSource = toolRegistry.versions("text_stats").get(0).source();
+        assertTrue(registrationSource.startsWith("plugin@"),
+                "注册来源要能区分内置与进化产物：" + registrationSource);
     }
 
     @Test
     void 插件二次进化后可回滚到上一版本() {
         applyGeneratedPlugin();
-        Tool beforeRollback = toolRegistry.find("text_stats").orElseThrow();
-        String sourceBefore = beforeRollback.source();
+        String sourceBefore = toolRegistry.versions("text_stats").get(0).source();
 
         ApplyResult second = applyGeneratedPlugin();
-        assertTrue(second.applied());
+        assertTrue(second.applied(), second.message());
         assertTrue(toolRegistry.versions("text_stats").size() >= 2, "第二次进化应产生新版本");
 
         ApplyResult rollback = pipeline.rollback("text_stats");
 
         assertTrue(rollback.applied(), rollback.message());
         assertTrue(toolRegistry.find("text_stats").isPresent());
-        assertFalse(toolRegistry.versions("text_stats").isEmpty());
         assertTrue(sourceBefore.startsWith("plugin@"), "回滚前后都应指向插件制品：" + sourceBefore);
     }
 

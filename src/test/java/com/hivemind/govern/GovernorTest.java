@@ -39,9 +39,9 @@ class GovernorTest {
     void 合规插件自动放行() {
         GateDecision decision = new Governor(properties).evaluate(
                 proposal(ChangeKind.PLUGIN, "proposer-agent", "减少一次模型往返", 20, Map.of()),
-                verdict("proposer-agent", true, 20));
+                verdict("reviewer-agent", true, 20));
 
-        assertTrue(decision.allowed());
+        assertTrue(decision.allowed(), "原因=" + decision.reasons());
         assertFalse(decision.requiresHuman(), "PLUGIN 在自动放行清单内且风险分不高，不需要人工签名");
     }
 
@@ -49,9 +49,9 @@ class GovernorTest {
     void 内核变更必须人工签名() {
         GateDecision decision = new Governor(properties).evaluate(
                 proposal(ChangeKind.KERNEL, "proposer-agent", "提升吞吐", 40, Map.of()),
-                verdict("proposer-agent", true, 30));
+                verdict("reviewer-agent", true, 30));
 
-        assertTrue(decision.allowed());
+        assertTrue(decision.allowed(), "原因=" + decision.reasons());
         assertTrue(decision.requiresHuman(), "内核源码变更永不由门禁自动放行");
         assertTrue(decision.reasons().stream().anyMatch(r -> r.contains("内核")), decision.reasons().toString());
     }
@@ -69,7 +69,7 @@ class GovernorTest {
     void 未声明预期收益即否决() {
         GateDecision decision = new Governor(properties).evaluate(
                 proposal(ChangeKind.PLUGIN, "proposer-agent", "", 20, Map.of()),
-                verdict("proposer-agent", true, 10));
+                verdict("reviewer-agent", true, 10));
 
         assertFalse(decision.allowed(), "没有方向声明的变更不许自动进入系统");
         assertTrue(decision.reasons().stream().anyMatch(r -> r.contains("未声明预期收益")));
@@ -80,7 +80,7 @@ class GovernorTest {
         GateDecision decision = new Governor(properties).evaluate(
                 proposal(ChangeKind.PLUGIN, "proposer-agent", "换更贵的模型", 20,
                         Map.of("costIncreaseRatio", 0.8, "successGain", 0.0)),
-                verdict("proposer-agent", true, 20));
+                verdict("reviewer-agent", true, 20));
 
         assertFalse(decision.allowed());
         assertTrue(decision.reasons().stream().anyMatch(r -> r.contains("反方向进化")));
@@ -100,7 +100,7 @@ class GovernorTest {
     void 风险分超阈值升级为人工签名() {
         GateDecision decision = new Governor(properties).evaluate(
                 proposal(ChangeKind.PLUGIN, "proposer-agent", "收益", 20, Map.of()),
-                verdict("proposer-agent", true, 90));
+                verdict("reviewer-agent", true, 90));
 
         assertTrue(decision.allowed());
         assertTrue(decision.requiresHuman());
