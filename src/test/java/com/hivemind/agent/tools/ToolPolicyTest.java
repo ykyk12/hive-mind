@@ -69,13 +69,13 @@ class ToolPolicyTest {
     @Test
     void ssh主机与命令都要过白名单() {
         HiveProperties properties = new HiveProperties();
-        properties.getAgent().setSshHosts("10.0.0.5");
+        properties.getAgent().setSshHosts("ops-node.internal");
         properties.getAgent().setSshUser("ops");
         properties.getAgent().setSshCommandAllowlist(List.of("uptime", "df\\s+-h"));
         SshExecTool tool = new SshExecTool(properties);
 
-        ToolResult wrongHost = tool.invoke(CONTEXT, Map.of("host", "10.0.0.9", "command", "uptime"));
-        ToolResult wrongCommand = tool.invoke(CONTEXT, Map.of("host", "10.0.0.5", "command", "rm -rf /"));
+        ToolResult wrongHost = tool.invoke(CONTEXT, Map.of("host", "other-node.internal", "command", "uptime"));
+        ToolResult wrongCommand = tool.invoke(CONTEXT, Map.of("host", "ops-node.internal", "command", "rm -rf /"));
 
         assertFalse(wrongHost.success());
         assertTrue(wrongHost.output().contains("主机"), wrongHost.output());
@@ -87,11 +87,11 @@ class ToolPolicyTest {
     @Test
     void ssh命令白名单为空时一律拒绝() {
         HiveProperties properties = new HiveProperties();
-        properties.getAgent().setSshHosts("10.0.0.5");
+        properties.getAgent().setSshHosts("ops-node.internal");
         properties.getAgent().setSshUser("ops");
 
         ToolResult result = new SshExecTool(properties)
-                .invoke(CONTEXT, Map.of("host", "10.0.0.5", "command", "uptime"));
+                .invoke(CONTEXT, Map.of("host", "ops-node.internal", "command", "uptime"));
 
         assertFalse(result.success());
         assertTrue(result.output().contains("命令白名单为空"), result.output());

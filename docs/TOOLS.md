@@ -40,10 +40,10 @@ MEDIUM/HIGH 工具在没有审批令牌时**不会被真正调用**，只会在 
 ```yaml
 hive:
   agent:
-    mqtt-broker-url: tcp://192.168.1.10:1883
+    mqtt-broker-url: tcp://mqtt-broker.internal:1883
     mqtt-topic-allow-prefixes: home/living_room/,home/kitchen/
     mqtt-qos: 1
-    ssh-hosts: 192.168.1.20
+    ssh-hosts: ops-node.internal
     ssh-user: ops
     ssh-command-allowlist:
       - "uptime"
@@ -56,7 +56,7 @@ hive:
 
 ```json
 {"action":"tool","tool":"mqtt_publish","args":{"topic":"home/living_room/light/set","payload":"ON"},"thought":"开客厅灯"}
-{"action":"tool","tool":"ssh_exec","args":{"host":"192.168.1.20","command":"uptime"},"thought":"看负载"}
+{"action":"tool","tool":"ssh_exec","args":{"host":"ops-node.internal","command":"uptime"},"thought":"看负载"}
 {"action":"tool","tool":"web_read","args":{"url":"http://127.0.0.1:8101/api/v1/models"},"thought":"读本机接口"}
 ```
 
@@ -68,7 +68,7 @@ hive:
 | 主题不在白名单 | `FAILED: 主题 home/bedroom/light/set 不在白名单内（允许的前缀=[...]）；白名单为空表示默认拒绝...` |
 | SSH 未配置 | `FAILED: SSH 执行器未启用（需要配置 hive.agent.ssh-hosts 与 hive.agent.ssh-user）` |
 | 命令不在白名单 | `FAILED: 命令不在白名单内：rm -rf /（允许的正则=[uptime, df\s+-h]）` |
-| 主机不在白名单 | `FAILED: 主机 10.0.0.9 不在白名单内（允许=[10.0.0.5]）` |
+| 主机不在白名单 | `FAILED: 主机 other-node.internal 不在白名单内（允许=[ops-node.internal]）` |
 | 无审批令牌 | 工具不会被调用，登记到 `/api/v1/pending-confirmations`，理由为"MEDIUM/HIGH 风险工具需要审批令牌（approve=true）" |
 
 ## 5. 为什么这样设计

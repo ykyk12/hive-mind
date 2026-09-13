@@ -202,7 +202,7 @@ export HIVE_MQTT_TOPIC_ALLOW_PREFIXES=home/living_room/,home/kitchen/
 #   CALL_TOOL:mqtt_publish {"topic":"home/living_room/light/set","payload":"ON"}
 
 # SSH 执行器（自己的电脑/服务器）
-export HIVE_SSH_HOSTS=10.0.0.5
+export HIVE_SSH_HOSTS=ops-node.internal
 export HIVE_SSH_USER=ops
 # 命令白名单以配置形式给出（正则，逐条匹配整条命令），默认空＝一律拒绝
 #   hive.agent.ssh-command-allowlist: ["uptime", "df\\s+-h", "systemctl status \\w+"]
@@ -262,6 +262,7 @@ MQTT / SSH / 网页提交都是 MEDIUM/HIGH 风险工具，**没有审批令牌�
 
 | 版本 | 说明 |
 |---|---|
+| 1.1.1 | 清理硬编码局域网 IP：测试与文档统一改用主机名（`ops-node.internal` / `mqtt-broker.internal`），避免把环境细节写死进仓库 |
 | 1.1.0 | M2 经验面（影子对比 / 适应度淘汰 / 召回评估集）、M3 真实测试门禁（隔离类加载器 + JUnit Launcher，未过不许生效）、M4 工具面（MQTT 直连 / SSH 执行器 / 网页读写，默认关闭 + 白名单 + 审批 + 审计） |
 | 1.0.0 | 首个功能提交（M0 内核 + M1 集群）：多模型路由与断熔、Agent 循环与风险门、技能蒸馏与反熵传播、三权分立门禁与隔离进化、心跳/选举/任务下发、测试与 CI |
 
