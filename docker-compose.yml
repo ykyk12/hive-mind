@@ -1,0 +1,63 @@
+# 三节点同构集群：同一镜像、不同环境变量
+# 演示要点：启动后 1~5 秒内某个节点自动当选大脑；docker compose stop node-2 后租约到期会重新选主
+services:
+  node-1:
+    build: .
+    container_name: hive-node-1
+    environment:
+      HIVE_NODE_ID: node-1
+      HIVE_PORT: 8101
+      HIVE_ENDPOINT: http://node-1:8101
+      HIVE_PEERS: http://node-2:8101,http://node-3:8101
+      HIVE_WEIGHT: 100
+      HIVE_HEARTBEAT_MS: 1000
+      HIVE_LEASE_MS: 4000
+      # 生产必须配置：节点间接口将要求 X-Hive-Cluster-Token
+      HIVE_CLUSTER_TOKEN: ""
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      HIVE_SMART_HOME_URL: ${HIVE_SMART_HOME_URL:-}
+    ports:
+      - "8101:8101"
+    volumes:
+      - hive-node-1:/app/hive
+
+  node-2:
+    build: .
+    container_name: hive-node-2
+    environment:
+      HIVE_NODE_ID: node-2
+      HIVE_PORT: 8101
+      HIVE_ENDPOINT: http://node-2:8101
+      HIVE_PEERS: http://node-1:8101,http://node-3:8101
+      HIVE_WEIGHT: 50
+      HIVE_HEARTBEAT_MS: 1000
+      HIVE_LEASE_MS: 4000
+      HIVE_CAPABILITIES: chat,code
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+    ports:
+      - "8102:8101"
+    volumes:
+      - hive-node-2:/app/hive
+
+  node-3:
+    build: .
+    container_name: hive-node-3
+    environment:
+      HIVE_NODE_ID: node-3
+      HIVE_PORT: 8101
+      HIVE_ENDPOINT: http://node-3:8101
+      HIVE_PEERS: http://node-1:8101,http://node-2:8101
+      HIVE_WEIGHT: 30
+      HIVE_HEARTBEAT_MS: 1000
+      HIVE_LEASE_MS: 4000
+      HIVE_CAPABILITIES: chat,search,summarize
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+    ports:
+      - "8103:8101"
+    volumes:
+      - hive-node-3:/app/hive
+
+volumes:
+  hive-node-1:
+  hive-node-2:
+  hive-node-3:

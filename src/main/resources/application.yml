@@ -1,0 +1,118 @@
+server:
+  port: ${HIVE_PORT:8101}
+
+spring:
+  application:
+    name: hive-node
+  jackson:
+    default-property-inclusion: non_null
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+# ============================================================================
+# HiveMind 节点配置
+# 所有节点跑同一份代码，角色（BRAIN/NEURON）是运行期状态，不是部署差异。
+# 环境变量即可完成"一台机器起 3 个节点"的演示，也支持铺到多台机器。
+# ============================================================================
+hive:
+  node:
+    id: ${HIVE_NODE_ID:node-1}
+    endpoint: ${HIVE_ENDPOINT:http://127.0.0.1:${HIVE_PORT:8101}}
+    weight: ${HIVE_WEIGHT:100}
+    # 逗号分隔的同伴地址；留空则为单节点集群（自己当选 BRAIN）
+    peers: ${HIVE_PEERS:}
+    capabilities: ${HIVE_CAPABILITIES:chat,reasoning,code,search,summarize}
+    heartbeat-millis: ${HIVE_HEARTBEAT_MS:1000}
+    lease-millis: ${HIVE_LEASE_MS:4000}
+
+  agent:
+    # 单次任务最多几轮 模型→工具→模型
+    max-steps: 6
+    # 单次任务最多注入几条技能
+    max-injected-skills: 4
+    # 任务入口默认是否要求审批令牌（高危工具另算，见 tools 风险等级）
+    default-model-task-type: REASONING
+
+  evolve:
+    # 制品根目录（工作区/制品库/审计轨迹都落这里）
+    root: ${HIVE_EVOLVE_ROOT:hive}
+    # 允许被自动门禁放行的变更类型：SKILL / CONFIG / PLUGIN
+    # KERNEL（改内核 Java 源码）不在其中——必须人工签名，见 docs/GOVERNANCE.md
+    auto-apply-kinds: SKILL,CONFIG,PLUGIN
+    # 插件源码行数上限，超过即拒（防"一句话改一堆"的不可审阅变更）
+    max-plugin-source-lines: 400
+    # 冒烟校验时必须能加载并实例化；不通过不允许切换
+    require-smoke-check: true
+
+  governance:
+    # 自审禁令：提议者不得是审核者，审核者不得是最终放行人
+    forbid-self-review: true
+    # 内核源码变更永远需要人工签名
+    kernel-requires-human: true
+    # 生产放行是否需要人工签名（演示可关，生产别关）
+    human-signature-required: false
+    # 方向控制：门锁只放行"不违背目标向量"的变更（权重见 DirectionVector）
+    max-risk-score: 60
+    # 禁止出现在自改代码里的模式（正则，命中即拒）
+    forbidden-patterns:
+      - 'System\s*\.\s*exit'
+      - 'Runtime\s*\.\s*getRuntime\s*\(\s*\)\s*\.\s*exec'
+      - 'ProcessBuilder'
+      - 'java\.lang\.reflect'
+      - 'Class\.forName'
+      - 'Thread\.stop'
+      - 'setAccessible\s*\(\s*true'
+      - 'sun\.misc\.Unsafe'
+      - 'javax\.script'
+      - 'Files\s*\.\s*delete'
+      - 'deleteIfExists'
+      - 'new\s+File\s*\(\s*"/'
+      - 'System\s*\.\s*setProperty'
+
+  # 多模型接入：能力画像决定路由，不写死"哪个模型最好"
+  models:
+    - id: mock-local
+      provider: mock
+      model: mock-local
+      display-name: 本地确定性模型（离线/测试用）
+      context-window: 32000
+      strengths: CHAT,SUMMARIZE,EXTRACT,ROUTE
+      cost-per-1k-in: 0.0
+      cost-per-1k-out: 0.0
+      p50-latency-ms: 5
+      weight: 10
+    - id: deepseek-chat
+      provider: openai-compatible
+      model: deepseek-chat
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      api-key: ${DEEPSEEK_API_KEY:}
+      display-name: DeepSeek Chat（中文与通用推理）
+      context-window: 64000
+      strengths: CHAT,REASONING,SUMMARIZE,EXTRACT,CODE
+      cost-per-1k-in: 0.001
+      cost-per-1k-out: 0.002
+      p50-latency-ms: 1500
+      weight: 20
+    - id: qwen-coder
+      provider: openai-compatible
+      model: qwen2.5-coder-32b-instruct
+      base-url: ${QWEN_BASE_URL:https://dashscope.aliyuncs.com/compatible-mode}
+      api-key: ${QWEN_API_KEY:}
+      display-name: 通义千问 Coder（代码专长）
+      context-window: 131072
+      strengths: CODE,REASONING
+      cost-per-1k-in: 0.0012
+      cost-per-1k-out: 0.0024
+      p50-latency-ms: 1800
+      weight: 15
