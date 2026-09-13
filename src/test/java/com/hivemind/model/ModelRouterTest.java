@@ -49,7 +49,7 @@ class ModelRouterTest {
     }
 
     @Test
-    void 能力画像决定排序：代码任务优先选择代码专长模型() {
+    void 能力画像决定排序_代码任务优先选择代码专长模型() {
         ModelRouter router = router();
 
         List<ModelProvider> codeChain = router.fallbackChain(TaskType.CODE);
