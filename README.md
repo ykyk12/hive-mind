@@ -4,7 +4,7 @@
 
 技术栈：Java 17 · Spring Boot 3.3 · 纯 JDK HttpClient（不引任何 LLM SDK）· Micrometer/Actuator · springdoc-openapi · Docker Compose · GitHub Actions
 
-当前版本 **1.1.0（M0 内核 + M1 集群 + M2 经验面 + M3 测试门禁 + M4 工具面）**：单 jar 多进程可跑通，无需数据库、无需外部 API（内置本地确定性模型）。
+当前版本 **1.1.1（M0 内核 + M1 集群 + M2 经验面 + M3 测试门禁 + M4 工具面）**：单 jar 多进程可跑通，无需数据库、无需外部 API（内置本地确定性模型）。
 
 ---
 
