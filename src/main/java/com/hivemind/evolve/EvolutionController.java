@@ -1,6 +1,8 @@
 package com.hivemind.evolve;
 
 import com.hivemind.common.ApiResponse;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -13,6 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 /** 制品与回滚接口（受 X-Hive-Admin-Key 保护）：证明"改坏了能退回来"。 */
+@Tag(name = "进化制品", description = "自改制品历史、当前生效制品与热配置、一键回滚")
 @RestController
 @RequestMapping("/api/v1/evolution")
 @RequiredArgsConstructor
@@ -20,11 +23,13 @@ public class EvolutionController {
 
     private final EvolutionPipeline pipeline;
 
+    @Operation(summary = "制品历史")
     @GetMapping("/artifacts")
     public ApiResponse<List<ArtifactStore.ArtifactRecord>> artifacts() {
         return ApiResponse.ok(pipeline.history());
     }
 
+    @Operation(summary = "当前生效制品与热配置")
     @GetMapping("/active")
     public ApiResponse<Map<String, Object>> active() {
         Map<String, Object> body = new LinkedHashMap<>();
@@ -34,6 +39,7 @@ public class EvolutionController {
         return ApiResponse.ok(body);
     }
 
+    @Operation(summary = "回滚到指定制品版本")
     @PostMapping("/rollback")
     public ApiResponse<ApplyResult> rollback(@RequestParam String name) {
         return ApiResponse.ok(pipeline.rollback(name));

@@ -4,6 +4,8 @@ import com.hivemind.common.ApiResponse;
 import com.hivemind.common.BizException;
 import com.hivemind.common.ErrorCode;
 import com.hivemind.config.HiveProperties;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,6 +22,7 @@ import java.util.Map;
 import java.util.Optional;
 
 /** 技能与经验接口：看得到"学到什么、谁验证过、够不够格推广"。 */
+@Tag(name = "技能与经验", description = "技能列表、反馈蒸馏、影子对比、召回评估、退役策展")
 @RestController
 @RequestMapping("/api/v1/skills")
 @RequiredArgsConstructor
@@ -32,6 +35,7 @@ public class SkillController {
     private final SkillCurator skillCurator;
     private final HiveProperties properties;
 
+    @Operation(summary = "列出活跃技能与适应度统计")
     @GetMapping
     public ApiResponse<List<Map<String, Object>>> list() {
         List<Map<String, Object>> out = new ArrayList<>();
@@ -56,6 +60,7 @@ public class SkillController {
     }
 
     /** 反馈某条经验的效果：这是"适应度"的输入来源。 */
+    @Operation(summary = "反馈技能使用效果")
     @PostMapping("/{skillId}/feedback")
     public ApiResponse<Map<String, Object>> feedback(@PathVariable String skillId,
                                                      @RequestParam String nodeId,
@@ -76,6 +81,7 @@ public class SkillController {
     }
 
     /** 手动蒸馏一条经验（也可由任务成功后的自动蒸馏产生）。 */
+    @Operation(summary = "手动蒸馏一条经验")
     @PostMapping("/distill")
     public ApiResponse<SkillArtifact> distill(@RequestBody DistillRequest request) {
         Optional<SkillArtifact> artifact = experienceBus.distill(request.input(), request.answer(),
@@ -85,24 +91,28 @@ public class SkillController {
     }
 
     /** 够格推广的技能（跨节点验证 + 适应度 + 使用次数门槛），供 gossip 广播。 */
+    @Operation(summary = "可推广技能列表")
     @GetMapping("/promotable")
     public ApiResponse<List<SkillArtifact>> promotable() {
         return ApiResponse.ok(skillStore.promotableArtifacts());
     }
 
     /** A/B 影子对比：注入技能 vs 不注入，比较结果并回写适应度。 */
+    @Operation(summary = "A/B 影子对比")
     @PostMapping("/shadow")
     public ApiResponse<SkillShadowService.ShadowReport> shadow(@RequestBody ShadowRequest request) {
         return ApiResponse.ok(shadowService.compare(request.input(), request.skillId(), request.version()));
     }
 
     /** 召回质量评估：在固定夹具上算 precision@k，改召回算法后可直接对比。 */
+    @Operation(summary = "召回质量评估 precision@k")
     @GetMapping("/eval")
     public ApiResponse<SkillRecallEvaluation.Report> evaluateRecall(@RequestParam(required = false) Integer topK) {
         return ApiResponse.ok(topK == null ? recallEvaluation.evaluate() : recallEvaluation.evaluate(topK));
     }
 
     /** 退役一条技能：立刻停止召回与广播（历史与统计保留，可恢复）。 */
+    @Operation(summary = "退役技能")
     @PostMapping("/{skillId}/retire")
     public ApiResponse<Map<String, Object>> retire(@PathVariable String skillId,
                                                    @RequestParam(defaultValue = "人工退役") String reason) {
@@ -116,6 +126,7 @@ public class SkillController {
         return ApiResponse.ok(body);
     }
 
+    @Operation(summary = "恢复已退役技能")
     @PostMapping("/{skillId}/unretire")
     public ApiResponse<Map<String, Object>> unretire(@PathVariable String skillId) {
         skillStore.unretire(skillId);
@@ -126,6 +137,7 @@ public class SkillController {
     }
 
     /** 策展视图：自动淘汰候选 + 已退役清单；?run=true 立即执行一次淘汰巡检。 */
+    @Operation(summary = "技能策展视图")
     @GetMapping("/curation")
     public ApiResponse<Map<String, Object>> curation(@RequestParam(defaultValue = "false") boolean run) {
         Map<String, Object> body = new LinkedHashMap<>();
