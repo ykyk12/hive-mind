@@ -299,6 +299,56 @@ mvn -B test
 # Tests run: 73, Failures: 0, Errors: 0, Skipped: 0 —— BUILD SUCCESS
 ```
 
+## 10.1 第二轮韧性加固（v1.1.3）
+
+在 v1.1.2（指数退避 + 断熔半开单探针）的基础上，本轮做深度走查、修 bug 与工程化加固。
+
+**修掉的 Bug（每个都带"位置 + 触发条件 + 回归测试 + 修复"）：**
+
+1. **SkillStore 内层 List 读写竞态（ConcurrentModificationException）。**
+   - 位置：`com.hivemind.skill.SkillStore`。`versions` 的 value 是普通 `ArrayList`，
+     而 `publish`/`recordUsage` 是 `synchronized`（写），但 `active()`/`versions()`/`allActive()`/
+     `upsertFromPeer()` 之前**没有** `synchronized`（读）。
+   - 触发条件：集群反熵接收（`upsertFromPeer`）与本节点发布（`publish`）/使用上报（`recordUsage`）并发时，
+     读线程在 `ArrayList` 上遍历时，写线程恰好 `list.add(0, ...)` 或 `list.set(i, ...)`，
+     就会抛 `ConcurrentModificationException`，或读到撕裂的版本列表。
+   - 修法：给上述读方法统一加 `synchronized`（与写方法共用同一把 `this` 监视器），
+     读写在同一把锁上互斥，读快照自洽。
+   - 回归测试：`skill/SkillStoreConcurrencyTest`（3 写线程并发 publish/recordUsage/upsert，
+     4 读线程并发 active/versions/allActive/hintsFor，断言零异常且读自洽）。
+2. **重试无抖动（retry storm / thundering herd）。**
+   - 位置：`model/OpenAiCompatibleProvider`。退避是 `base * 2^attempt` 封顶 2s，
+     但**没有任何随机抖动**：所有客户端在同一时刻按完全相同的间隔重试，
+     下游刚一恢复就被齐射打垮。
+   - 触发条件：多客户端同时遭遇 429/5xx 时，退避节奏完全一致。
+   - 修法：新增 `applyJitter(backoff, random)`，采用**等抖动（equal jitter）**，
+     实际等待落在 `[backoff/2, backoff]` 区间内随机；原确定性纯函数 `backoffMillis` 保留不动（既有测试不破坏）。
+   - 回归测试：`model/OpenAiCompatibleProviderRetryTest` 新增两个用例
+     （抖动落在半退避到全退避之间；多次采样确实发散）。
+
+**工程化加固：**
+- 依赖：保持 Spring Boot 3.3.5 父 POM 不跨大版本；`spring-boot-starter-actuator` 已在 pom 中，
+  `application.yml` 仅对外暴露 `health,info,metrics`（不暴露全量端点）。
+- 补边界/故障注入单测：`model/FaultInjectionRoutingTest`（可编程假提供方），
+  验证"断熔 OPEN 期间不再触碰已熔断提供方""全部提供方故障时抛业务异常且记账"。
+
+**新增功能：模型响应幂等缓存（默认关闭，opt-in）。**
+- 位置：新增 `model/ModelResponseCache`，由 `ModelRouter` 持有。
+- 行为：对相同 `(taskType, systemPrompt, messages)` 的请求，在 TTL 内直接返回上次成功结果，
+  不再经过断熔/降级链；只缓存成功响应（失败结果无复用价值）；键为内容 SHA-256，不存大 prompt。
+- 配置：`hive.model.cache.enabled`（默认 `false`，避免改变既有路由/断熔语义）、
+  `ttl-seconds`（默认 60）、`max-entries`（默认 256，按插入序淘汰最旧）。
+- 可注入时钟（`LongSupplier`），单测无需 sleep 即可验证 TTL 过期。
+- 诊断：`ModelRouter.cacheStats()` 返回 `enabled/hits/misses/size`（不含任何 prompt 内容）。
+- 回归测试：`model/ModelResponseCacheTest`（命中不重算、不同消息不串、TTL 过期失效、有界淘汰、关闭时不生效、路由层不重复调用提供方）。
+
+**验证命令与结果：**
+
+```
+mvn -B -o test
+# Tests run: 85, Failures: 0, Errors: 0, Skipped: 0 —— BUILD SUCCESS（基线 73 → 85）
+```
+
 ## 11. License
 
 MIT © 2026 杨锴

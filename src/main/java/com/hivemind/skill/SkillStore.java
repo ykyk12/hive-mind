@@ -55,7 +55,11 @@ public class SkillStore implements SkillAdvisor {
         return stored;
     }
 
-    public Optional<SkillArtifact> active(String skillId) {
+    /**
+     * 读取当前生效版本。注意：versions 的 value 是普通 ArrayList，publish/recordUsage 会原地修改它，
+     * 因此读方法必须与写方法共用同一把 this 锁，否则并发 publish 时会抛 ConcurrentModificationException 或读到撕裂状态。
+     */
+    public synchronized Optional<SkillArtifact> active(String skillId) {
         Integer version = activeVersions.get(skillId);
         if (version == null) {
             return Optional.empty();
@@ -65,11 +69,11 @@ public class SkillStore implements SkillAdvisor {
                 .findFirst();
     }
 
-    public List<SkillArtifact> versions(String skillId) {
+    public synchronized List<SkillArtifact> versions(String skillId) {
         return List.copyOf(versions.getOrDefault(skillId, List.of()));
     }
 
-    public List<SkillArtifact> allActive() {
+    public synchronized List<SkillArtifact> allActive() {
         List<SkillArtifact> out = new ArrayList<>();
         for (String skillId : versions.keySet()) {
             active(skillId).ifPresent(out::add);
@@ -105,7 +109,7 @@ public class SkillStore implements SkillAdvisor {
     }
 
     /** 反熵接收：同伴推来的技能版本入库（版本已存在则只补验证节点）。 */
-    public SkillArtifact upsertFromPeer(SkillArtifact artifact, String peerNodeId) {
+    public synchronized SkillArtifact upsertFromPeer(SkillArtifact artifact, String peerNodeId) {
         Optional<SkillArtifact> existing = versions.getOrDefault(artifact.skillId(), List.of()).stream()
                 .filter(a -> a.version() == artifact.version())
                 .findFirst();

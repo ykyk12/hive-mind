@@ -25,6 +25,8 @@ public final class OpenAiCompatibleProvider implements ModelProvider {
     private final HiveProperties.ModelConfig config;
     private final ObjectMapper objectMapper;
     private final HttpClient http;
+    /** 退避抖动源：避免所有客户端在同一时刻集体重试（retry storm / thundering herd）。 */
+    private final java.util.Random jitterRandom = new java.util.Random();
 
     public OpenAiCompatibleProvider(ModelCaps caps, HiveProperties.ModelConfig config, ObjectMapper objectMapper) {
         this.caps = caps;
@@ -57,7 +59,7 @@ public final class OpenAiCompatibleProvider implements ModelProvider {
                 if (!e.retryable() || attempt >= maxRetries) {
                     throw e;
                 }
-                sleepQuietly(backoffMillis(attempt, config.getRetryBaseMillis()));
+                sleepQuietly(applyJitter(backoffMillis(attempt, config.getRetryBaseMillis()), jitterRandom));
             }
         }
         throw last;
@@ -128,6 +130,18 @@ public final class OpenAiCompatibleProvider implements ModelProvider {
     static long backoffMillis(int attempt, long base) {
         long multiplier = 1L << Math.min(attempt, 10);
         return Math.min(base * multiplier, 2000L);
+    }
+
+    /**
+     * 等抖动（equal jitter）：在 [backoff/2, backoff] 区间内随机取一个值。
+     * 既保留指数退避的平均节奏，又让并发客户端错峰重试，避免下游恢复瞬间被打垮。
+     */
+    static long applyJitter(long backoff, java.util.Random random) {
+        long half = backoff / 2;
+        if (half <= 0) {
+            return backoff;
+        }
+        return half + random.nextInt((int) half + 1);
     }
 
     private static void sleepQuietly(long ms) {

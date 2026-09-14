@@ -25,6 +25,7 @@ public class HiveProperties {
     private Evolve evolve = new Evolve();
     private Governance governance = new Governance();
     private List<ModelConfig> models = new ArrayList<>();
+    private Model model = new Model();
 
     /** 节点身份与集群参数。 */
     @Data
@@ -187,6 +188,23 @@ public class HiveProperties {
                 }
             }
             return set;
+        }
+    }
+
+    /** 模型层横切配置：响应缓存等。 */
+    @Data
+    public static class Model {
+        private Cache cache = new Cache();
+
+        /** 相同 prompt 的幂等响应缓存：读多写少、确定性问答可显著省一次往返。默认关闭，避免影响既有行为。 */
+        @Data
+        public static class Cache {
+            /** 是否开启响应缓存。默认关闭：避免改变既有路由/断熔测试语义。 */
+            private boolean enabled = false;
+            /** 缓存有效期（秒）。 */
+            private long ttlSeconds = 60;
+            /** 最大缓存条数；超出后按插入序淘汰最旧。 */
+            private int maxEntries = 256;
         }
     }
 

@@ -42,4 +42,32 @@ class OpenAiCompatibleProviderRetryTest {
         assertTrue(new ModelUnavailableException("限流").retryable());
         assertFalse(new ModelUnavailableException("未配置 key", false).retryable());
     }
+
+
+    @Test
+    void jitterKeepsBackoffWithinHalfAndFullRange() {
+        java.util.Random rnd = new java.util.Random(42);
+        for (int attempt = 0; attempt < 8; attempt++) {
+            long backoff = OpenAiCompatibleProvider.backoffMillis(attempt, 200);
+            for (int i = 0; i < 50; i++) {
+                long jittered = OpenAiCompatibleProvider.applyJitter(backoff, rnd);
+                assertTrue(jittered >= backoff / 2, "抖动后不应小于一半退避：" + jittered);
+                assertTrue(jittered <= backoff, "抖动后不应超过原退避：" + jittered);
+            }
+        }
+    }
+
+    @Test
+    void jitterVariesAcrossCallsSoRetriesAreStaggered() {
+        java.util.Random rnd = new java.util.Random();
+        long backoff = OpenAiCompatibleProvider.backoffMillis(6, 200);
+        long first = OpenAiCompatibleProvider.applyJitter(backoff, rnd);
+        boolean varied = false;
+        for (int i = 0; i < 20 && !varied; i++) {
+            if (OpenAiCompatibleProvider.applyJitter(backoff, rnd) != first) {
+                varied = true;
+            }
+        }
+        assertTrue(varied, "抖动应让并发客户端的重试时刻错开");
+    }
 }

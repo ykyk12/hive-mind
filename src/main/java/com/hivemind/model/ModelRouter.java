@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -29,15 +30,26 @@ public class ModelRouter {
     private final HiveProperties properties;
     private final Map<String, ModelStats> stats = new ConcurrentHashMap<>();
     private final Map<String, CircuitBreaker> breakers = new ConcurrentHashMap<>();
+    private final ModelResponseCache cache;
 
     public ModelRouter(ProviderRegistry registry, HiveProperties properties) {
         this.registry = registry;
         this.properties = properties;
+        HiveProperties.Model.Cache cfg = properties.getModel().getCache();
+        this.cache = new ModelResponseCache(cfg.isEnabled(), cfg.getTtlSeconds() * 1000L, cfg.getMaxEntries(),
+                System::currentTimeMillis);
     }
 
     /** 执行一次模型调用（含降级与断熔）。 */
     public CompletionResponse execute(CompletionRequest request) {
         TaskType type = request.taskType() == null ? TaskType.CHAT : request.taskType();
+        // 幂等响应缓存：命中则直接返回，不再经过断熔/降级链（上次这条 prompt 已验证可行）
+        String cacheKey = ModelResponseCache.key(request);
+        Optional<CompletionResponse> cached = cache.get(cacheKey);
+        if (cached.isPresent()) {
+            log.debug("模型响应缓存命中：task={}", type);
+            return cached.get();
+        }
         List<ModelProvider> chain = fallbackChain(type);
         if (chain.isEmpty()) {
             throw new BizException(ErrorCode.NO_PROVIDER, "没有可用模型：检查 hive.models 配置与 API Key 环境变量");
@@ -59,6 +71,7 @@ public class ModelRouter {
                 stats(id).recordSuccess(latency);
                 breaker.onSuccess();
                 log.info("模型调用成功 provider={} task={} latency={}ms", id, type, latency);
+                cache.put(cacheKey, response);
                 return response;
             } catch (RuntimeException e) {
                 stats(id).recordFailure();
@@ -149,5 +162,15 @@ public class ModelRouter {
     /** 让测试可以直接检查属性绑定（不额外暴露内部字段）。 */
     public HiveProperties properties() {
         return properties;
+    }
+
+    /** 响应缓存诊断（供 /api 与 actuator 观察，不含任何 prompt 内容）。 */
+    public Map<String, Object> cacheStats() {
+        Map<String, Object> body = new java.util.LinkedHashMap<>();
+        body.put("enabled", cache.enabled());
+        body.put("hits", cache.hits());
+        body.put("misses", cache.misses());
+        body.put("size", cache.size());
+        return body;
     }
 }
