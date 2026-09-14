@@ -13,7 +13,7 @@
 
     <groupId>com.hivemind</groupId>
     <artifactId>hive-mind</artifactId>
-    <version>1.1.1</version>
+    <version>1.1.2</version>
     <name>hive-mind</name>
     <description>HiveMind —— 同构蜂巢智能体平台：多模型路由 + 经验蒸馏传播 + 三权分立自改门禁</description>
 

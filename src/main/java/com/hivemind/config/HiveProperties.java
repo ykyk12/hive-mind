@@ -170,6 +170,12 @@ public class HiveProperties {
         private double costPer1kOut = 0.0;
         private long p50LatencyMs = 1000;
         private int weight = 10;
+        /** 瞬时失败（429/5xx/网络超时）的额外重试次数；0 表示不重试。 */
+        private int maxRetries = 1;
+        /** 重试退避基数（毫秒），按 2^attempt 增长并封顶 2s。 */
+        private long retryBaseMillis = 200;
+        /** 单次请求超时（毫秒），原硬编码 90s，按提供方可配。 */
+        private long requestTimeoutMillis = 90000;
 
         public Set<com.hivemind.model.TaskType> strengthSet() {
             Set<com.hivemind.model.TaskType> set = new LinkedHashSet<>();

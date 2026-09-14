@@ -262,9 +262,42 @@ MQTT / SSH / 网页提交都是 MEDIUM/HIGH 风险工具，**没有审批令牌�
 
 | 版本 | 说明 |
 |---|---|
+| 1.1.2 | 模型路由韧性增强（对标 one-api / LiteLLM）：OpenAI 兼容提供方对 429/5xx/网络超时做指数退避重试（4xx 不重试，可配 `maxRetries`/`retryBaseMillis`）；单次请求超时可配（`requestTimeoutMillis`，原硬编码 90s）；断熔器半开态只放行一个并发探针，避免打挂恢复中的提供方。新增 `CircuitBreakerTest`、`OpenAiCompatibleProviderRetryTest`。 |
 | 1.1.1 | 清理硬编码局域网 IP：测试与文档统一改用主机名（`ops-node.internal` / `mqtt-broker.internal`），避免把环境细节写死进仓库 |
 | 1.1.0 | M2 经验面（影子对比 / 适应度淘汰 / 召回评估集）、M3 真实测试门禁（隔离类加载器 + JUnit Launcher，未过不许生效）、M4 工具面（MQTT 直连 / SSH 执行器 / 网页读写，默认关闭 + 白名单 + 审批 + 审计） |
 | 1.0.0 | 首个功能提交（M0 内核 + M1 集群）：多模型路由与断熔、Agent 循环与风险门、技能蒸馏与反熵传播、三权分立门禁与隔离进化、心跳/选举/任务下发、测试与 CI |
+
+## 10.1 对标升级（1.1.2）
+
+**对标了哪些真实高星项目（仅借鉴设计思想，未逐字复制代码）：**
+
+| 项目 | star 量级 | URL | 借鉴点 |
+|---|---|---|---|
+| one-api | ~20k+ | https://github.com/songquanpeng/one-api | 多渠道网关：5xx/429 自动重试、4xx 不重试、渠道失败降级 |
+| LiteLLM | ~15k+ | https://github.com/BerriAI/litellm | `RetryPolicy`：`retryable_status_codes=[429,500,503]`、`backoff_factor` 指数退避、按错误类型区分重试 |
+
+**吸收并实现：**
+
+1. **同一提供方的瞬时失败重试（退避）**：`OpenAiCompatibleProvider` 原先一次失败就直接抛给路由降级。现借鉴 LiteLLM `RetryPolicy`，对 **429 限流 / 5xx / 网络超时**做指数退避重试（`base * 2^attempt`，封顶 2s）；**4xx（鉴权/参数/不存在）不重试**，避免无效重试。新增 `ModelUnavailableException.retryable()` 标记瞬时/确定性错误。
+2. **请求超时可配**：原硬编码 90s 单次请求超时，现按提供方可配（`requestTimeoutMillis`，默认 90000，向后兼容）。
+3. **断熔器半开单探针**：冷却结束后只放行**一个**并发探针请求，其余并发请求本轮直接降级——避免恢复中的提供方被并发探测瞬间再次打挂（经典断熔器语义）。
+
+**改动文件：**
+
+- `src/main/java/com/hivemind/model/OpenAiCompatibleProvider.java`（重试循环 + 可配超时 + 可测判定）
+- `src/main/java/com/hivemind/model/CircuitBreaker.java`（半开单探针）
+- `src/main/java/com/hivemind/model/ModelUnavailableException.java`（retryable 标记）
+- `src/main/java/com/hivemind/config/HiveProperties.java`（`maxRetries`/`retryBaseMillis`/`requestTimeoutMillis`）
+- `src/test/java/com/hivemind/model/CircuitBreakerTest.java`（新增）
+- `src/test/java/com/hivemind/model/OpenAiCompatibleProviderRetryTest.java`（新增）
+- `pom.xml`（1.1.1 → 1.1.2）、`README.md`（本节与版本表）
+
+**验证命令与结果：**
+
+```
+mvn -B test
+# Tests run: 73, Failures: 0, Errors: 0, Skipped: 0 —— BUILD SUCCESS
+```
 
 ## 11. License
 
